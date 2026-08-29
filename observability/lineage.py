@@ -14,27 +14,33 @@ def load_graph(path: str | Path) -> dict[str, list[str]]:
 
 def get_downstream_assets(graph: dict[str, list[str]], start: str) -> list[str]:
     """Return transitive downstream assets in BFS order, excluding start."""
-    seen = {start}
-    q: deque[str] = deque([start])
-    out: list[str] = []
-    while q:
-        node = q.popleft()
-        for child in graph.get(node, []):
-            if child not in seen:
-                seen.add(child)
-                out.append(child)
-                q.append(child)
-    return out
+    return _downstream_bfs(graph, start)
 
 
 def get_column_downstream(
     column_graph: dict[str, list[str]], start_column: str
 ) -> list[str]:
-    """TODO(student): implement column-level traversal.
+    """Return all affected downstream columns in BFS order.
 
-    Starter returns only direct children, so transitive hidden cases will fail.
+    The graph may have shared descendants or accidental cycles. The visited set
+    avoids duplicate blast-radius entries and guarantees traversal terminates.
     """
-    return list(column_graph.get(start_column, []))
+    return _downstream_bfs(column_graph, start_column)
+
+
+def _downstream_bfs(graph: dict[str, list[str]], start: str) -> list[str]:
+    """Traverse a directed lineage graph without returning the start node."""
+    seen = {start}
+    queue: deque[str] = deque([start])
+    downstream: list[str] = []
+    while queue:
+        node = queue.popleft()
+        for child in graph.get(node, []):
+            if child not in seen:
+                seen.add(child)
+                downstream.append(child)
+                queue.append(child)
+    return downstream
 
 
 def extract_dbt_dataset_graph(manifest_path: str | Path) -> dict[str, list[str]]:

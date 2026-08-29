@@ -29,8 +29,12 @@ c4.metric("Critical failures", report["critical_contract_failures"])
 st.subheader("Current signals")
 st.json({
     "row_count_anomaly": report["row_count_anomaly"],
+    "kb_contract_failures": report.get("kb_failed_contract_checks", 0),
+    "kb_freshness_minutes": report.get("kb_freshness_minutes"),
+    "kb_freshness_failed": report.get("kb_freshness_failed", False),
     "kb_text_length_signal": report["kb_text_length_signal"],
     "contract_slo": report["contract_slo"],
+    "rag_freshness_slo": report.get("rag_freshness_slo"),
 })
 
 history = pd.read_csv(HISTORY)

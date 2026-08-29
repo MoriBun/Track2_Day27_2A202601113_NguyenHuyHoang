@@ -27,17 +27,21 @@ def main() -> None:
     failed = failed_issues(issues)
     critical_failed = failed_issues(issues, min_severity="critical")
 
-    # Public example: segment by weekday before applying the simple detector.
-    # Hidden evaluation still challenges students to make detect_metric(..., context=...)
-    # context-aware instead of relying on caller-side preprocessing.
+    # Pass both full history and the comparable weekday segment. The detector
+    # owns the baseline-selection policy rather than relying on the caller to
+    # silently replace its history.
     current_dow = datetime.now().weekday()
     segment = history.loc[history["day_of_week"] == current_dow, "row_count"].tail(8).tolist()
-    row_history = segment if len(segment) >= 3 else history["row_count"].tail(14).tolist()
+    row_history = history["row_count"].tail(28).tolist()
     row_result = detect_anomaly(
         len(orders),
         row_history,
         method="auto",
-        context={"metric_name": "row_count", "day_of_week": current_dow},
+        context={
+            "metric_name": "row_count",
+            "day_of_week": current_dow,
+            "same_segment_history": segment,
+        },
     )
 
     updated = pd.to_datetime(orders["updated_at"], utc=True, errors="coerce")
@@ -46,6 +50,20 @@ def main() -> None:
     ).total_seconds() / 60.0
 
     docs = load_jsonl(ROOT / "data" / "incoming" / "kb_documents.jsonl")
+    kb_contract = load_contract(ROOT / "contracts" / "kb_contract.yaml")
+    kb_issues = validate_dataframe(pd.DataFrame(docs), kb_contract)
+    kb_failed = failed_issues(kb_issues)
+    kb_freshness_failed = any(
+        issue["check"] == "freshness" and not issue["passed"]
+        for issue in kb_issues
+    )
+    published = pd.to_datetime(
+        [doc.get("published_at") for doc in docs], utc=True, errors="coerce"
+    )
+    latest_published = published.max()
+    kb_freshness_minutes = (
+        pd.Timestamp(datetime.now(timezone.utc)) - latest_published
+    ).total_seconds() / 60 if not pd.isna(latest_published) else float("inf")
     text_result = detect_text_length_shift(
         [d["content"] for d in docs], history["mean_text_length"].tail(14).tolist()
     )
@@ -53,6 +71,9 @@ def main() -> None:
     # Demo SLO: one check event for this run.
     bad = 1 if critical_failed else 0
     contract_slo = calculate_slo(0.999, bad_events=bad, total_events=1)
+    rag_freshness_slo = calculate_slo(
+        0.99, bad_events=1 if kb_freshness_failed else 0, total_events=1
+    )
 
     with open(ROOT / "data" / "baseline" / "lineage_graph.json", "r", encoding="utf-8") as f:
         lineage = json.load(f)["dataset_lineage"]
@@ -65,8 +86,12 @@ def main() -> None:
         "critical_contract_failures": len(critical_failed),
         "row_count_anomaly": row_result,
         "freshness_minutes": freshness_minutes,
+        "kb_failed_contract_checks": len(kb_failed),
+        "kb_freshness_minutes": kb_freshness_minutes,
+        "kb_freshness_failed": kb_freshness_failed,
         "kb_text_length_signal": text_result,
         "contract_slo": contract_slo,
+        "rag_freshness_slo": rag_freshness_slo,
         "sample_blast_radius_from_stg_orders": blast_radius,
     }
     out = ROOT / "reports" / "latest_metrics.json"
@@ -78,6 +103,8 @@ def main() -> None:
     print(f"critical contract fails  : {len(critical_failed)}")
     print(f"row-count anomaly        : {row_result['is_anomaly']} ({row_result['method']}, score={row_result['score']:.2f})")
     print(f"freshness minutes        : {freshness_minutes:.1f}")
+    print(f"KB contract failed checks: {len(kb_failed)}")
+    print(f"KB freshness minutes     : {kb_freshness_minutes:.1f}")
     print(f"KB length anomaly        : {text_result['is_anomaly']}")
     print(f"sample blast radius      : {', '.join(blast_radius)}")
     print(f"report                    : {out.relative_to(ROOT)}")

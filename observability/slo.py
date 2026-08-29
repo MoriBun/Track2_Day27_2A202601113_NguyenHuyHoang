@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 
@@ -37,15 +38,58 @@ def evaluate_multiwindow_burn(
     long_window_burn: float,
     policy: str = "starter",
 ) -> dict[str, Any]:
-    """TODO(student): implement a real multi-window burn-rate policy.
+    """Evaluate a two-window burn-rate alert policy.
 
-    Starter intentionally never pages. Hidden evaluation contains cases that
-    require distinguishing sustained fast burn from a transient spike.
+    Both windows must be elevated before paging. This prevents a short-lived
+    batch glitch from waking an operator while retaining fast alerts for a
+    sustained error-budget burn. The thresholds are deliberately explicit so
+    a service can later tune them to its SLO period and response capacity.
     """
-    return {
-        "page": False,
-        "severity": "info",
-        "reason": "starter_policy_not_implemented",
+    if policy != "starter":
+        raise ValueError(f"Unsupported burn policy: {policy}")
+    for name, value in {
         "short_window_burn": short_window_burn,
         "long_window_burn": long_window_burn,
+    }.items():
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(f"{name} must be a finite non-negative number")
+
+    result = {
+        "short_window_burn": float(short_window_burn),
+        "long_window_burn": float(long_window_burn),
+        "policy": "two_window_v1",
+    }
+
+    # Fast burn: consuming budget at >=14.4x in the recent window and >=6x
+    # over the longer window deserves an immediate, high-severity page.
+    if short_window_burn >= 14.4 and long_window_burn >= 6.0:
+        return {
+            **result,
+            "page": True,
+            "severity": "critical",
+            "reason": "sustained_fast_burn: short>=14.4 and long>=6.0",
+        }
+
+    # Slower but still sustained burn is actionable during normal on-call.
+    if short_window_burn >= 6.0 and long_window_burn >= 3.0:
+        return {
+            **result,
+            "page": True,
+            "severity": "warning",
+            "reason": "sustained_burn: short>=6.0 and long>=3.0",
+        }
+
+    if short_window_burn >= 6.0 or long_window_burn >= 3.0:
+        return {
+            **result,
+            "page": False,
+            "severity": "warning",
+            "reason": "single_window_elevated: investigate, but do_not_page",
+        }
+
+    return {
+        **result,
+        "page": False,
+        "severity": "info",
+        "reason": "burn_within_policy",
     }

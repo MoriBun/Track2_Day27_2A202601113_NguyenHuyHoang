@@ -5,6 +5,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from observability.anomaly import zscore_detector
+from observability.distribution import detect_distribution_shift
 
 
 def approximate_token_lengths(texts: Iterable[str]) -> list[int]:
@@ -29,9 +30,13 @@ def detect_text_length_shift(
 def detect_embedding_norm_shift(
     current_norms: Iterable[float], baseline_norms: Iterable[float]
 ) -> dict[str, Any]:
-    """TODO(student): implement embedding-space drift signal.
+    """Detect embedding-norm drift without downloading an embedding model.
 
-    No embedding model is required for the starter lab. Hidden evaluation can
-    feed precomputed norms/similarities through this stable interface.
+    Norms are a compact proxy for an embedding pipeline's output geometry.
+    This is not a semantic retrieval-quality metric, but it can expose model,
+    normalization, or indexing regressions before they affect every query.
     """
-    return {"is_anomaly": False, "score": 0.0, "method": "not_implemented"}
+    result = detect_distribution_shift(current_norms, baseline_norms)
+    result["method"] = f"embedding_norm:{result['method']}"
+    result["metric"] = "embedding_norm"
+    return result

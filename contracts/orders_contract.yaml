@@ -4,6 +4,7 @@ freshness:
   column: updated_at
   max_delay_minutes: 30
   severity: warning
+  action: warn
 columns:
   order_id:
     type: integer
@@ -29,6 +30,7 @@ columns:
     required: true
     accepted_values: [pending, completed, refunded, cancelled]
     severity: warning
+    action: quarantine
   created_at:
     type: datetime
     required: true

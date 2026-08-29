@@ -8,7 +8,10 @@ with completed_orders as (
     where status = 'completed'
 ),
 active_customers as (
-    select *
+    -- This mart only needs an active-customer membership check. Keep exactly
+    -- one join key per customer so an SCD/source defect with two active
+    -- versions cannot multiply completed order rows or revenue.
+    select distinct customer_id
     from {{ ref('stg_customers') }}
     where is_active = true
 )
